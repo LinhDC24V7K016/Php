@@ -297,4 +297,112 @@ class Contact
         
         return $statement->fetchColumn();
     }
+
+    /**
+     * Xóa nhiều contacts cùng lúc bằng cách sử dụng Transaction.
+     */
+    public function deleteMultiple(array $ids): bool 
+    {
+        $this->db->beginTransaction();
+        $success = true;
+
+        try {
+            $statement = $this->db->prepare('DELETE FROM contacts WHERE id = :id');
+            
+            foreach ($ids as $id) {
+                $id = (int)$id; 
+                
+                if (!$statement->execute(['id' => $id])) {
+                    $success = false;
+                    break;
+                }
+            }
+
+            if ($success) {
+                $this->db->commit();
+                return true;
+            } else {
+                $this->db->rollBack();
+                return false;
+            }
+
+        } catch (\PDOException $e) {
+            $this->db->rollBack();
+            // throw $e; // Có thể ném lỗi để hàm gọi xử lý
+            return false;
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // CHỨC NĂNG BỔ SUNG: 2. KIỂM TRA DUY NHẤT (DATABASE VALIDATION)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Kiểm tra xem số điện thoại có bị trùng lặp trong CSDL hay không.
+     */
+    public function isPhoneUnique(string $phone, int $ignoreId = -1): bool
+    {
+        $sql = 'SELECT COUNT(*) FROM contacts WHERE phone = :phone AND id != :ignoreId';
+        $statement = $this->db->prepare($sql);
+        
+        $statement->execute([
+            'phone' => $phone,
+            'ignoreId' => $ignoreId
+        ]);
+
+        return $statement->fetchColumn() === 0;
+    }
+
+    // ----------------------------------------------------------------------
+    // CHỨC NĂNG BỔ SUNG: 3. TRUY XUẤT TỔNG HỢP (AGGREGATION)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Đếm số lượng contacts theo đầu số điện thoại (2 chữ số đầu).
+     */
+    public function countByPhonePrefix(): array
+    {
+        $sql = "SELECT SUBSTRING(phone, 1, 2) AS prefix, COUNT(*) AS count 
+                FROM contacts 
+                GROUP BY prefix 
+                HAVING LENGTH(prefix) = 2";
+
+        $statement = $this->db->prepare($sql);
+        $statement->execute();
+
+        $results = [];
+        while ($row = $statement->fetch(PDO::FETCH_ASSOC)) {
+            $results[$row['prefix']] = (int)$row['count'];
+        }
+
+        return $results;
+    }
+
+/**
+     * Lấy chi tiết một contact và tên loại của nó dựa trên ID.
+     * @param int $id ID của contact cần truy vấn.
+     * @param ?PDO $pdo Đối tượng PDO để kết nối CSDL.
+     * @return ?object Một đối tượng chứa chi tiết contact hoặc null.
+     */
+    public static function getContactDetails(int $id, ?PDO $pdo): ?object
+    {
+        if (!$pdo) {
+            return null;
+        }
+
+        $sql = "SELECT 
+                    c.*, ct.name AS type_name 
+                FROM contacts c
+                INNER JOIN contact_types ct ON c.type_id = ct.id
+                WHERE c.id = :id";
+        
+        $statement = $pdo->prepare($sql);
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->execute();
+
+        // Trả về một đối tượng duy nhất
+        $result = $statement->fetch(PDO::FETCH_OBJ);
+
+        return $result ?: null;
+    }
 }

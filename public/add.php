@@ -31,6 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $contact->save() && redirect('/');
    }
 }
+
+
+$keyword = '0918';
+$searchResults = $contactModel->search($keyword, 0, 10, 'name', 'DESC');
+$totalResults = $contactModel->countSearch($keyword);
 ?>
 
 <body>
